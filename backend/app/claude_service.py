@@ -12,7 +12,7 @@ import base64
 import mimetypes
 from pathlib import Path
 
-API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 
 def get_api_key():
