@@ -1,7 +1,7 @@
 """
-Claude API integration for brand compliance analysis.
+Gemini API integration for brand compliance analysis.
 
-Uses direct httpx calls to the Anthropic Messages API
+Uses direct httpx calls to the Google Gemini API
 to analyze uploaded assets against stored brand guidelines.
 """
 
@@ -12,16 +12,16 @@ import base64
 import mimetypes
 from pathlib import Path
 
-API_URL = "https://api.anthropic.com/v1/messages"
+API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 
 def get_api_key():
-    """Get Anthropic API key from environment."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    """Get Gemini API key from environment."""
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY environment variable is required. "
-            "Get your key at https://console.anthropic.com/settings/keys"
+            "GEMINI_API_KEY environment variable is required. "
+            "Get your key at https://aistudio.google.com/app/apikey"
         )
     return api_key
 
@@ -85,7 +85,7 @@ async def analyze_asset(
     guidelines: list[dict],
 ) -> dict:
     """
-    Send an asset to Claude for brand compliance analysis.
+    Send an asset to Gemini for brand compliance analysis.
 
     Args:
         file_path: Path to the uploaded file
@@ -98,7 +98,7 @@ async def analyze_asset(
     api_key = get_api_key()
     guidelines_context = build_guidelines_context(guidelines)
 
-    # Build the message content
+    # Build the message content for Gemini
     content = []
 
     # Add the file as an image if it's an image type
@@ -107,9 +107,8 @@ async def analyze_asset(
             file_data = base64.standard_b64encode(f.read()).decode("utf-8")
         content.append({
             "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": file_type,
+            "image": {
+                "mimeType": file_type,
                 "data": file_data,
             },
         })
@@ -118,11 +117,8 @@ async def analyze_asset(
             file_data = base64.standard_b64encode(f.read()).decode("utf-8")
         content.append({
             "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": "application/pdf",
-                "data": file_data,
-            },
+            "mimeType": "application/pdf",
+            "data": file_data,
         })
     else:
         # For other file types, read as text if possible
@@ -150,30 +146,42 @@ async def analyze_asset(
         ),
     })
 
-    # Call Claude API directly via httpx
+    # Prepare Gemini API request
     headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+        "Content-Type": "application/json",
     }
 
     body = {
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 2000,
-        "system": COMPLIANCE_SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": content}],
+        "systemInstruction": {
+            "parts": [{
+                "text": COMPLIANCE_SYSTEM_PROMPT
+            }]
+        },
+        "contents": [{
+            "parts": content
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 2000,
+            "temperature": 0.7,
+        }
     }
 
+    # Call Gemini API
+    url = f"{API_URL}?key={api_key}"
+    
     async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(API_URL, headers=headers, json=body)
+        response = await client.post(url, headers=headers, json=body)
 
     if response.status_code != 200:
-        raise RuntimeError(f"Claude API error {response.status_code}: {response.text}")
+        raise RuntimeError(f"Gemini API error {response.status_code}: {response.text}")
 
     data = response.json()
 
-    # Parse the response
-    response_text = data["content"][0]["text"].strip()
+    # Parse the response - Gemini returns in a different format
+    try:
+        response_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"Unexpected Gemini API response format: {data}")
 
     # Clean up any markdown fences if present
     if response_text.startswith("```"):
@@ -185,7 +193,7 @@ async def analyze_asset(
     try:
         result = json.loads(response_text)
     except json.JSONDecodeError:
-        # Fallback if Claude doesn't return clean JSON
+        # Fallback if Gemini doesn't return clean JSON
         result = {
             "overall_score": 50,
             "category_scores": {

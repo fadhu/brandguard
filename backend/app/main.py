@@ -1,6 +1,6 @@
 """
 Brandguard — Brand Compliance Agent Backend
-FastAPI + SQLite + Claude API
+FastAPI + SQLite + Gemini API
 """
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Brandguard API",
-    description="Brand compliance agent powered by Claude",
+    description="Brand compliance agent powered by Gemini",
     version="1.0.0",
     lifespan=lifespan,
 )

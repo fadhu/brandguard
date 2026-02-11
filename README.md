@@ -1,6 +1,6 @@
 # Brandguard — Brand Compliance Agent
 
-AI-powered brand compliance tool that reviews creative assets against your brand guidelines using Claude.
+AI-powered brand compliance tool that reviews creative assets against your brand guidelines using Gemini.
 
 ## Architecture
 
@@ -11,13 +11,13 @@ brandguard/
 │   │   ├── main.py          # App entry, CORS, router registration
 │   │   ├── database.py      # SQLite models & connection
 │   │   ├── auth_utils.py    # JWT tokens, password hashing
-│   │   ├── claude_service.py # Claude API integration
+│   │   ├── claude_service.py # Gemini API integration
 │   │   ├── schemas.py       # Pydantic request/response models
 │   │   ├── seed.py          # Sample data seeder
 │   │   └── routers/
 │   │       ├── auth.py      # Register, login, team
 │   │       ├── guidelines.py # CRUD brand guidelines
-│   │       ├── scans.py     # File upload + Claude analysis
+│   │       ├── scans.py     # File upload + Gemini analysis
 │   │       └── issues.py    # Issue tracking & resolution
 │   ├── requirements.txt
 │   └── uploads/             # Uploaded files (auto-created)
@@ -47,7 +47,7 @@ brandguard/
 
 ## Features
 
-- **Upload & Scan** — Drag-and-drop files (PDF, PNG, JPG, SVG, HTML, CSS). Claude analyzes each against your brand guidelines.
+- **Upload & Scan** — Drag-and-drop files (PDF, PNG, JPG, SVG, HTML, CSS). Gemini analyzes each against your brand guidelines.
 - **Compliance Dashboard** — Overall score, assets compliant, open issues, avg resolution time, per-category breakdowns.
 - **Issue Tracking** — Auto-generated issues from scans with severity, categories, and suggested fixes.
 - **Brand Guidelines** — Full CRUD across 6 categories: color, typography, logo, imagery, voice & tone, layout.
@@ -58,14 +58,14 @@ brandguard/
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- Anthropic API key (https://console.anthropic.com/settings/keys)
+- Google Gemini API key (https://aistudio.google.com/app/apikey)
 
 ### 1. Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
+export GEMINI_API_KEY=your-api-key...
 python -m app.seed        # Seed sample data (optional)
 python -m app.main        # → http://localhost:8000
 ```
@@ -86,8 +86,8 @@ npm run dev               # → http://localhost:3000
 
 1. User uploads a file via the Upload page
 2. Backend saves the file and creates a scan record (status: pending)
-3. Background task sends the file to Claude Sonnet 4 with all stored brand guidelines
-4. Claude returns: overall score, per-category scores, and specific issues with suggested fixes
+3. Background task sends the file to Gemini with all stored brand guidelines
+4. Gemini returns: overall score, per-category scores, and specific issues with suggested fixes
 5. Scan updated to completed, issues stored in database
 6. Frontend polls for completion and displays results
 
@@ -105,7 +105,7 @@ npm run dev               # → http://localhost:3000
 
 | Variable | Required | Description |
 |---|---|---|
-| ANTHROPIC_API_KEY | Yes | Anthropic API key for Claude |
+| GEMINI_API_KEY | Yes | Google Gemini API key |
 | JWT_SECRET | No | JWT signing secret (defaults to dev key) |
 
 ## Tech Stack
