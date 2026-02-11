@@ -44,41 +44,24 @@ def build_guidelines_context(guidelines: list[dict]) -> str:
     return "## BRAND GUIDELINES\n\n" + "\n\n".join(sections)
 
 
-COMPLIANCE_SYSTEM_PROMPT = """You are Brandguard, an expert brand compliance analyst. Your job is to review
-creative assets against a company's brand guidelines and identify any violations.
+COMPLIANCE_SYSTEM_PROMPT = """You are a brand compliance analyst. Analyze the asset against brand guidelines.
 
-You will be given:
-1. Brand guidelines with specific rules per category (color, typography, logo, imagery, voice, layout)
-2. An asset to review (image or document)
+RESPOND WITH ONLY VALID JSON - no markdown, no code blocks, pure JSON only.
 
-IMPORTANT: Respond with ONLY valid JSON, no markdown formatting, no code blocks, pure JSON only.
-
-Use this exact structure:
+Required JSON structure:
 {
-  "overall_score": 0-100,
-  "category_scores": {
-    "color": 0-100,
-    "typography": 0-100,
-    "logo": 0-100,
-    "imagery": 0-100,
-    "voice": 0-100,
-    "layout": 0-100
-  },
-  "summary": "brief 2-3 sentence summary",
-  "issues": [
-    {
-      "title": "short title",
-      "description": "what's wrong",
-      "category": "color|typography|logo|imagery|voice|layout",
-      "severity": "high|medium|low",
-      "suggested_fix": "how to fix it"
-    }
-  ]
+  "overall_score": 0-100 number,
+  "category_scores": {"color": 0-100, "typography": 0-100, "logo": 0-100, "imagery": 0-100, "voice": 0-100, "layout": 0-100},
+  "summary": "2-3 sentence summary",
+  "issues": [{"title": "text", "description": "text", "category": "text", "severity": "high|medium|low", "suggested_fix": "text"}]
 }
 
-- Be specific and actionable
-- Reference exact guideline rules when flagging violations
-- Score generously for categories not applicable (e.g., voice for pure image)"""
+Rules:
+- Only output JSON, nothing else
+- Make scores 0-100 integers
+- If category not applicable, score 70
+- Reference exact violations
+- Be specific and actionable"""
 
 
 async def analyze_asset(
@@ -160,8 +143,8 @@ async def analyze_asset(
             "parts": parts
         }],
         "generationConfig": {
-            "maxOutputTokens": 4000,
-            "temperature": 0.7,
+            "maxOutputTokens": 8000,
+            "temperature": 0.3,
         }
     }
 
@@ -196,6 +179,19 @@ async def analyze_asset(
     # Fix common JSON issues from Gemini
     # Remove escaped single quotes that shouldn't be escaped in JSON
     response_text = response_text.replace("\\'", "'")
+    
+    # If response appears truncated, try to complete it with minimal valid JSON
+    if not response_text.endswith("}"):
+        # Count unclosed braces and brackets
+        open_braces = response_text.count("{") - response_text.count("}")
+        open_brackets = response_text.count("[") - response_text.count("]")
+        
+        # If we're inside an item or list, close them
+        if response_text.rstrip().endswith(","):
+            response_text = response_text.rstrip()[:-1]  # Remove trailing comma
+        
+        # Close open structures
+        response_text += "]" * open_brackets + "}" * open_braces
     
     try:
         result = json.loads(response_text)
