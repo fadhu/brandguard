@@ -1,0 +1,183 @@
+"""
+Claude API integration for brand compliance analysis.
+
+Uses the Anthropic Python SDK to analyze uploaded assets
+against stored brand guidelines.
+"""
+
+import anthropic
+import json
+import os
+import base64
+import mimetypes
+from pathlib import Path
+
+
+def get_client():
+    """Get Anthropic client. Requires ANTHROPIC_API_KEY env var."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY environment variable is required. "
+            "Get your key at https://console.anthropic.com/settings/keys"
+        )
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def build_guidelines_context(guidelines: list[dict]) -> str:
+    """Format brand guidelines into a structured prompt context."""
+    if not guidelines:
+        return "No brand guidelines have been configured yet. Analyze based on general brand best practices."
+
+    sections = []
+    for g in guidelines:
+        rules = json.loads(g["rules"]) if isinstance(g["rules"], str) else g["rules"]
+        rules_text = "\n".join(f"  - {r}" for r in rules) if rules else "  (no specific rules defined)"
+        sections.append(
+            f"### {g['category'].upper()}: {g['title']}\n"
+            f"{g['description']}\n"
+            f"Rules:\n{rules_text}"
+        )
+
+    return "## BRAND GUIDELINES\n\n" + "\n\n".join(sections)
+
+
+COMPLIANCE_SYSTEM_PROMPT = """You are Brandguard, an expert brand compliance analyst. Your job is to review
+creative assets against a company's brand guidelines and identify any violations.
+
+You will be given:
+1. Brand guidelines with specific rules per category (color, typography, logo, imagery, voice, layout)
+2. An asset to review (image or document)
+
+Analyze the asset thoroughly and respond with a JSON object (no markdown, no backticks) with this exact structure:
+{
+  "overall_score": <0-100 integer>,
+  "category_scores": {
+    "color": <0-100>,
+    "typography": <0-100>,
+    "logo": <0-100>,
+    "imagery": <0-100>,
+    "voice": <0-100>,
+    "layout": <0-100>
+  },
+  "summary": "<2-3 sentence summary of compliance status>",
+  "issues": [
+    {
+      "title": "<short issue title>",
+      "description": "<what's wrong and where>",
+      "category": "<color|typography|logo|imagery|voice|layout>",
+      "severity": "<high|medium|low>",
+      "suggested_fix": "<specific actionable fix>"
+    }
+  ]
+}
+
+Be specific and actionable. Reference exact guideline rules when flagging violations.
+If the asset is mostly compliant, still look for minor improvements.
+Score generously for categories that are not applicable (e.g., voice/tone for a pure image)."""
+
+
+async def analyze_asset(
+    file_path: str,
+    file_type: str,
+    guidelines: list[dict],
+) -> dict:
+    """
+    Send an asset to Claude for brand compliance analysis.
+
+    Args:
+        file_path: Path to the uploaded file
+        file_type: MIME type of the file
+        guidelines: List of guideline dicts from the database
+
+    Returns:
+        Parsed compliance analysis dict
+    """
+    client = get_client()
+    guidelines_context = build_guidelines_context(guidelines)
+
+    # Build the message content
+    content = []
+
+    # Add the file as an image if it's an image type
+    if file_type.startswith("image/"):
+        with open(file_path, "rb") as f:
+            file_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": file_type,
+                "data": file_data,
+            },
+        })
+    elif file_type == "application/pdf":
+        with open(file_path, "rb") as f:
+            file_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        content.append({
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": file_data,
+            },
+        })
+    else:
+        # For other file types, read as text if possible
+        try:
+            with open(file_path, "r") as f:
+                text_content = f.read()
+            content.append({
+                "type": "text",
+                "text": f"[File content of {Path(file_path).name}]:\n{text_content[:10000]}",
+            })
+        except UnicodeDecodeError:
+            content.append({
+                "type": "text",
+                "text": f"[Binary file: {Path(file_path).name}, type: {file_type}. Unable to read content directly. Please analyze based on filename and type.]",
+            })
+
+    # Add the analysis request with guidelines
+    content.append({
+        "type": "text",
+        "text": (
+            f"{guidelines_context}\n\n"
+            "---\n\n"
+            "Please analyze the above asset for brand compliance against the provided guidelines. "
+            "Return ONLY the JSON response, no other text."
+        ),
+    })
+
+    # Call Claude API
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2000,
+        system=COMPLIANCE_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": content}],
+    )
+
+    # Parse the response
+    response_text = message.content[0].text.strip()
+
+    # Clean up any markdown fences if present
+    if response_text.startswith("```"):
+        response_text = response_text.split("\n", 1)[1]
+    if response_text.endswith("```"):
+        response_text = response_text.rsplit("```", 1)[0]
+    response_text = response_text.strip()
+
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError:
+        # Fallback if Claude doesn't return clean JSON
+        result = {
+            "overall_score": 50,
+            "category_scores": {
+                "color": 50, "typography": 50, "logo": 50,
+                "imagery": 50, "voice": 50, "layout": 50,
+            },
+            "summary": "Analysis completed but response parsing failed. Please try again.",
+            "issues": [],
+        }
+
+    return result
