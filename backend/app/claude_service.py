@@ -51,32 +51,34 @@ You will be given:
 1. Brand guidelines with specific rules per category (color, typography, logo, imagery, voice, layout)
 2. An asset to review (image or document)
 
-Analyze the asset thoroughly and respond with a JSON object (no markdown, no backticks) with this exact structure:
+IMPORTANT: Respond with ONLY valid JSON, no markdown formatting, no code blocks, pure JSON only.
+
+Use this exact structure:
 {
-  "overall_score": <0-100 integer>,
+  "overall_score": 0-100,
   "category_scores": {
-    "color": <0-100>,
-    "typography": <0-100>,
-    "logo": <0-100>,
-    "imagery": <0-100>,
-    "voice": <0-100>,
-    "layout": <0-100>
+    "color": 0-100,
+    "typography": 0-100,
+    "logo": 0-100,
+    "imagery": 0-100,
+    "voice": 0-100,
+    "layout": 0-100
   },
-  "summary": "<2-3 sentence summary of compliance status>",
+  "summary": "brief 2-3 sentence summary",
   "issues": [
     {
-      "title": "<short issue title>",
-      "description": "<what's wrong and where>",
-      "category": "<color|typography|logo|imagery|voice|layout>",
-      "severity": "<high|medium|low>",
-      "suggested_fix": "<specific actionable fix>"
+      "title": "short title",
+      "description": "what's wrong",
+      "category": "color|typography|logo|imagery|voice|layout",
+      "severity": "high|medium|low",
+      "suggested_fix": "how to fix it"
     }
   ]
 }
 
-Be specific and actionable. Reference exact guideline rules when flagging violations.
-If the asset is mostly compliant, still look for minor improvements.
-Score generously for categories that are not applicable (e.g., voice/tone for a pure image)."""
+- Be specific and actionable
+- Reference exact guideline rules when flagging violations
+- Score generously for categories not applicable (e.g., voice for pure image)"""
 
 
 async def analyze_asset(
@@ -158,7 +160,7 @@ async def analyze_asset(
             "parts": parts
         }],
         "generationConfig": {
-            "maxOutputTokens": 2000,
+            "maxOutputTokens": 4000,
             "temperature": 0.7,
         }
     }
@@ -166,7 +168,7 @@ async def analyze_asset(
     # Call Gemini API
     url = f"{API_URL}?key={api_key}"
     
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(url, headers=headers, json=body)
 
     if response.status_code != 200:
