@@ -180,16 +180,23 @@ async def analyze_asset(
     except (KeyError, IndexError, TypeError):
         raise RuntimeError(f"Unexpected Gemini API response format: {data}")
 
-    # Clean up any markdown fences if present
+    # Clean up markdown code fences (```json...```)
     if response_text.startswith("```"):
-        response_text = response_text.split("\n", 1)[1]
+        # Remove first line (the opening ``` with language specifier)
+        lines = response_text.split("\n")
+        response_text = "\n".join(lines[1:])
     if response_text.endswith("```"):
-        response_text = response_text.rsplit("```", 1)[0]
+        # Remove last line (the closing ```)
+        lines = response_text.split("\n")
+        response_text = "\n".join(lines[:-1])
     response_text = response_text.strip()
 
     try:
         result = json.loads(response_text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        # Log the error for debugging
+        print(f"JSON Parse Error: {e}")
+        print(f"Response text: {repr(response_text)}")
         # Fallback if Gemini doesn't return clean JSON
         result = {
             "overall_score": 50,
