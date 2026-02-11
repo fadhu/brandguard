@@ -1,27 +1,29 @@
 """
 Claude API integration for brand compliance analysis.
 
-Uses the Anthropic Python SDK to analyze uploaded assets
-against stored brand guidelines.
+Uses direct httpx calls to the Anthropic Messages API
+to analyze uploaded assets against stored brand guidelines.
 """
 
-import anthropic
+import httpx
 import json
 import os
 import base64
 import mimetypes
 from pathlib import Path
 
+API_URL = "https://api.anthropic.com/v1/messages"
 
-def get_client():
-    """Get Anthropic client. Requires ANTHROPIC_API_KEY env var."""
+
+def get_api_key():
+    """Get Anthropic API key from environment."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY environment variable is required. "
             "Get your key at https://console.anthropic.com/settings/keys"
         )
-    return anthropic.Anthropic(api_key=api_key)
+    return api_key
 
 
 def build_guidelines_context(guidelines: list[dict]) -> str:
@@ -93,7 +95,7 @@ async def analyze_asset(
     Returns:
         Parsed compliance analysis dict
     """
-    client = get_client()
+    api_key = get_api_key()
     guidelines_context = build_guidelines_context(guidelines)
 
     # Build the message content
@@ -148,16 +150,30 @@ async def analyze_asset(
         ),
     })
 
-    # Call Claude API
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
-        system=COMPLIANCE_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": content}],
-    )
+    # Call Claude API directly via httpx
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+
+    body = {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 2000,
+        "system": COMPLIANCE_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": content}],
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(API_URL, headers=headers, json=body)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Claude API error {response.status_code}: {response.text}")
+
+    data = response.json()
 
     # Parse the response
-    response_text = message.content[0].text.strip()
+    response_text = data["content"][0]["text"].strip()
 
     # Clean up any markdown fences if present
     if response_text.startswith("```"):
