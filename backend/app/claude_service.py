@@ -98,52 +98,49 @@ async def analyze_asset(
     api_key = get_api_key()
     guidelines_context = build_guidelines_context(guidelines)
 
-    # Build the message content for Gemini
-    content = []
+    # Build the message parts array for Gemini (correct format)
+    parts = []
 
     # Add the file as an image if it's an image type
     if file_type.startswith("image/"):
         with open(file_path, "rb") as f:
             file_data = base64.standard_b64encode(f.read()).decode("utf-8")
-        content.append({
-            "type": "image",
-            "image": {
+        parts.append({
+            "inlineData": {
                 "mimeType": file_type,
                 "data": file_data,
-            },
+            }
         })
     elif file_type == "application/pdf":
         with open(file_path, "rb") as f:
             file_data = base64.standard_b64encode(f.read()).decode("utf-8")
-        content.append({
-            "type": "document",
-            "mimeType": "application/pdf",
-            "data": file_data,
+        parts.append({
+            "inlineData": {
+                "mimeType": "application/pdf",
+                "data": file_data,
+            }
         })
     else:
         # For other file types, read as text if possible
         try:
             with open(file_path, "r") as f:
                 text_content = f.read()
-            content.append({
-                "type": "text",
-                "text": f"[File content of {Path(file_path).name}]:\n{text_content[:10000]}",
+            parts.append({
+                "text": f"[File content of {Path(file_path).name}]:\n{text_content[:10000]}"
             })
         except UnicodeDecodeError:
-            content.append({
-                "type": "text",
-                "text": f"[Binary file: {Path(file_path).name}, type: {file_type}. Unable to read content directly. Please analyze based on filename and type.]",
+            parts.append({
+                "text": f"[Binary file: {Path(file_path).name}, type: {file_type}. Unable to read content directly. Please analyze based on filename and type.]"
             })
 
     # Add the analysis request with guidelines
-    content.append({
-        "type": "text",
+    parts.append({
         "text": (
             f"{guidelines_context}\n\n"
             "---\n\n"
             "Please analyze the above asset for brand compliance against the provided guidelines. "
             "Return ONLY the JSON response, no other text."
-        ),
+        )
     })
 
     # Prepare Gemini API request
@@ -158,7 +155,7 @@ async def analyze_asset(
             }]
         },
         "contents": [{
-            "parts": content
+            "parts": parts
         }],
         "generationConfig": {
             "maxOutputTokens": 2000,
