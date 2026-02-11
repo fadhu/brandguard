@@ -193,12 +193,16 @@ async def analyze_asset(
         response_text = "\n".join(lines[:-1])
     response_text = response_text.strip()
 
+    # Fix common JSON issues from Gemini
+    # Remove escaped single quotes that shouldn't be escaped in JSON
+    response_text = response_text.replace("\\'", "'")
+    
     try:
         result = json.loads(response_text)
     except json.JSONDecodeError as e:
         # Log the error for debugging
         print(f"JSON Parse Error: {e}")
-        print(f"Response text: {repr(response_text)}")
+        print(f"Response text: {repr(response_text[:500])}")
         # Fallback if Gemini doesn't return clean JSON
         result = {
             "overall_score": 50,
