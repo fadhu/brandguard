@@ -11,6 +11,7 @@ import os
 import base64
 import mimetypes
 from pathlib import Path
+from typing import Optional
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
@@ -283,7 +284,7 @@ def _extract_gemini_text(data: dict) -> str:
         raise RuntimeError(f"Unexpected Gemini API response format: {data}")
 
 
-def _clean_gemini_json(response_text: str) -> dict | None:
+def _clean_gemini_json(response_text: str) -> Optional[dict]:
     """Clean and parse JSON from Gemini responses. Returns None on failure."""
     # Clean up markdown code fences (```json...```)
     if response_text.startswith("```"):
