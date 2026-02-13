@@ -171,8 +171,8 @@ async def analyze_asset(
             "parts": parts
         }],
         "generationConfig": {
-            "maxOutputTokens": 8000,
-            "temperature": 0.3,
+            "maxOutputTokens": 16000,
+            "temperature": 0.2,
         }
     }
 
@@ -248,7 +248,7 @@ async def extract_guidelines_from_brandkit(
         "systemInstruction": {"parts": [{"text": EXTRACTION_SYSTEM_PROMPT}]},
         "contents": [{"parts": parts}],
         "generationConfig": {
-            "maxOutputTokens": 8000,
+            "maxOutputTokens": 16000,
             "temperature": 0.2,
         }
     }
@@ -300,10 +300,22 @@ def _clean_gemini_json(response_text: str) -> Optional[dict]:
 
     # If response appears truncated, try to complete it
     if not response_text.endswith("}"):
-        open_braces = response_text.count("{") - response_text.count("}")
-        open_brackets = response_text.count("[") - response_text.count("]")
+        # Check if we're in the middle of a string by counting quotes
+        # Count only non-escaped quotes
+        quote_count = response_text.count('"') - response_text.count('\\"')
+        
+        # If odd number of quotes, we have an unterminated string
+        if quote_count % 2 == 1:
+            response_text += '"'  # Close the unterminated string
+        
+        # Remove trailing comma if present
         if response_text.rstrip().endswith(","):
             response_text = response_text.rstrip()[:-1]
+        
+        # Close any open structures
+        open_braces = response_text.count("{") - response_text.count("}")
+        open_brackets = response_text.count("[") - response_text.count("]")
+        
         response_text += "]" * open_brackets + "}" * open_braces
 
     try:
