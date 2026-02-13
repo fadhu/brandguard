@@ -22,19 +22,26 @@ def row_to_guideline(row) -> dict:
 @router.get("/")
 async def list_guidelines(
     category: str = None,
+    rule_set_id: int = None,
     current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """List all brand guidelines, optionally filtered by category."""
+    """List brand guidelines, optionally filtered by category and/or rule set."""
+    conditions = []
+    params = []
+
+    if rule_set_id is not None:
+        conditions.append("rule_set_id = ?")
+        params.append(rule_set_id)
+
     if category:
-        rows = db.execute(
-            "SELECT * FROM guidelines WHERE category = ? ORDER BY category, title",
-            (category,),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT * FROM guidelines ORDER BY category, title"
-        ).fetchall()
+        conditions.append("category = ?")
+        params.append(category)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = db.execute(
+        f"SELECT * FROM guidelines {where} ORDER BY category, title", params
+    ).fetchall()
 
     return [row_to_guideline(r) for r in rows]
 
@@ -73,15 +80,28 @@ async def create_guideline(
     db=Depends(get_db),
 ):
     """Create a new brand guideline."""
+    rule_set_id = body.rule_set_id
+    if rule_set_id is None:
+        # Default to the active manual rule set
+        rs = db.execute(
+            "SELECT id FROM rule_sets WHERE is_active = 1 AND source_type = 'manual'"
+        ).fetchone()
+        if not rs:
+            rs = db.execute(
+                "SELECT id FROM rule_sets WHERE source_type = 'manual' ORDER BY id LIMIT 1"
+            ).fetchone()
+        rule_set_id = rs["id"] if rs else None
+
     cursor = db.execute(
-        """INSERT INTO guidelines (category, title, description, rules, examples, created_by)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO guidelines (category, title, description, rules, examples, rule_set_id, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             body.category,
             body.title,
             body.description,
             json.dumps(body.rules),
             json.dumps(body.examples),
+            rule_set_id,
             current_user["id"],
         ),
     )

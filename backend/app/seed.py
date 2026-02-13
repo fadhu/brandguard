@@ -38,6 +38,12 @@ def seed():
             (email, name, hash_password("password123"), role, team),
         )
 
+    # ── Default Rule Set ──
+    conn.execute(
+        """INSERT INTO rule_sets (name, description, source_type, status, is_active, created_by)
+           VALUES ('Manual Rules', 'Default manually entered brand guidelines', 'manual', 'ready', 1, 1)"""
+    )
+
     # ── Guidelines ──
     guidelines = [
         {
@@ -130,8 +136,8 @@ def seed():
 
     for g in guidelines:
         conn.execute(
-            """INSERT INTO guidelines (category, title, description, rules, examples, created_by)
-               VALUES (?, ?, ?, ?, ?, 1)""",
+            """INSERT INTO guidelines (category, title, description, rules, examples, rule_set_id, created_by)
+               VALUES (?, ?, ?, ?, ?, 1, 1)""",
             (g["category"], g["title"], g["description"], json.dumps(g["rules"]), json.dumps(g["examples"])),
         )
 

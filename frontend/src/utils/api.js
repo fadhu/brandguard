@@ -81,10 +81,43 @@ class ApiClient {
     this.setToken(null);
   }
 
+  // Rule Sets
+  async getRuleSets() {
+    return this.request('/rulesets/');
+  }
+
+  async createRuleSet(data) {
+    return this.request('/rulesets/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async uploadBrandKit(file, name = '') {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', name);
+    return this.request('/rulesets/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async activateRuleSet(id) {
+    return this.request(`/rulesets/${id}/activate`, { method: 'POST' });
+  }
+
+  async deleteRuleSet(id) {
+    return this.request(`/rulesets/${id}`, { method: 'DELETE' });
+  }
+
   // Guidelines
-  async getGuidelines(category = null) {
-    const params = category ? `?category=${category}` : '';
-    return this.request(`/guidelines/${params}`);
+  async getGuidelines(category = null, ruleSetId = null) {
+    const params = new URLSearchParams();
+    if (category) params.set('category', category);
+    if (ruleSetId) params.set('rule_set_id', ruleSetId);
+    const qs = params.toString();
+    return this.request(`/guidelines/${qs ? '?' + qs : ''}`);
   }
 
   async getGuidelinesSummary() {

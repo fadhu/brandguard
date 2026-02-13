@@ -33,6 +33,30 @@ class TokenResponse(BaseModel):
     user: UserOut
 
 
+# ── Rule Sets ──
+class RuleSetCreate(BaseModel):
+    name: str
+    description: str = ""
+
+class RuleSetUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class RuleSetOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    source_type: str
+    status: str
+    is_active: bool
+    source_filename: str
+    error_message: str
+    guideline_count: int = 0
+    created_by: Optional[int]
+    updated_at: str
+    created_at: str
+
+
 # ── Guidelines ──
 class GuidelineCreate(BaseModel):
     category: str
@@ -40,6 +64,7 @@ class GuidelineCreate(BaseModel):
     description: str
     rules: List[str] = []
     examples: List[str] = []
+    rule_set_id: Optional[int] = None
 
 class GuidelineUpdate(BaseModel):
     title: Optional[str] = None
@@ -54,6 +79,7 @@ class GuidelineOut(BaseModel):
     description: str
     rules: List[str]
     examples: List[str]
+    rule_set_id: Optional[int]
     created_by: Optional[int]
     updated_at: str
     created_at: str

@@ -44,6 +44,33 @@ def build_guidelines_context(guidelines: list[dict]) -> str:
     return "## BRAND GUIDELINES\n\n" + "\n\n".join(sections)
 
 
+EXTRACTION_SYSTEM_PROMPT = """You are a brand guidelines expert. Extract structured brand rules from the provided brand kit document.
+
+RESPOND WITH ONLY VALID JSON - no markdown, no code blocks, pure JSON only.
+
+Required JSON structure:
+{
+  "guidelines": [
+    {
+      "category": "color|typography|logo|imagery|voice|layout",
+      "title": "Short descriptive title",
+      "description": "1-2 sentence description of this guideline area",
+      "rules": ["Specific rule 1", "Specific rule 2"]
+    }
+  ]
+}
+
+Rules for extraction:
+- Only output JSON, nothing else
+- Use exactly these categories: color, typography, logo, imagery, voice, layout
+- Create one guideline object per distinct topic area (e.g. separate "Primary Colors" from "Accent Colors")
+- Extract specific, actionable rules: include hex codes, font names, sizes, spacing values where present
+- If the document mentions do's and don'ts, convert them to rules
+- If a category is not covered in the document, omit it entirely
+- Be thorough: extract every rule you can find
+- Rules should be self-contained and understandable without the source document"""
+
+
 COMPLIANCE_SYSTEM_PROMPT = """You are a brand compliance analyst. Analyze the asset against brand guidelines.
 
 RESPOND WITH ONLY VALID JSON - no markdown, no code blocks, pure JSON only.
@@ -159,47 +186,11 @@ async def analyze_asset(
 
     data = response.json()
 
-    # Parse the response - Gemini returns in a different format
-    try:
-        response_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError, TypeError):
-        raise RuntimeError(f"Unexpected Gemini API response format: {data}")
+    # Parse and clean the response
+    response_text = _extract_gemini_text(data)
+    result = _clean_gemini_json(response_text)
 
-    # Clean up markdown code fences (```json...```)
-    if response_text.startswith("```"):
-        # Remove first line (the opening ``` with language specifier)
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:])
-    if response_text.endswith("```"):
-        # Remove last line (the closing ```)
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[:-1])
-    response_text = response_text.strip()
-
-    # Fix common JSON issues from Gemini
-    # Remove escaped single quotes that shouldn't be escaped in JSON
-    response_text = response_text.replace("\\'", "'")
-    
-    # If response appears truncated, try to complete it with minimal valid JSON
-    if not response_text.endswith("}"):
-        # Count unclosed braces and brackets
-        open_braces = response_text.count("{") - response_text.count("}")
-        open_brackets = response_text.count("[") - response_text.count("]")
-        
-        # If we're inside an item or list, close them
-        if response_text.rstrip().endswith(","):
-            response_text = response_text.rstrip()[:-1]  # Remove trailing comma
-        
-        # Close open structures
-        response_text += "]" * open_brackets + "}" * open_braces
-    
-    try:
-        result = json.loads(response_text)
-    except json.JSONDecodeError as e:
-        # Log the error for debugging
-        print(f"JSON Parse Error: {e}")
-        print(f"Response text: {repr(response_text[:500])}")
-        # Fallback if Gemini doesn't return clean JSON
+    if result is None:
         result = {
             "overall_score": 50,
             "category_scores": {
@@ -211,3 +202,112 @@ async def analyze_asset(
         }
 
     return result
+
+
+async def extract_guidelines_from_brandkit(
+    file_path: str,
+    file_type: str,
+) -> dict:
+    """
+    Send a brand kit document to Gemini to extract structured brand guidelines.
+
+    Returns:
+        Dict with "guidelines" key containing list of extracted guideline objects.
+    """
+    api_key = get_api_key()
+    parts = []
+
+    # Encode the file (reuse same pattern as analyze_asset)
+    if file_type.startswith("image/") or file_type == "application/pdf":
+        with open(file_path, "rb") as f:
+            file_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        parts.append({
+            "inlineData": {
+                "mimeType": file_type,
+                "data": file_data,
+            }
+        })
+    else:
+        try:
+            with open(file_path, "r") as f:
+                text_content = f.read()
+            parts.append({"text": f"[Document content]:\n{text_content[:20000]}"})
+        except UnicodeDecodeError:
+            raise RuntimeError("Cannot read the uploaded file as text or image")
+
+    parts.append({
+        "text": (
+            "Please analyze this brand kit / brand guidelines document thoroughly. "
+            "Extract ALL brand rules, specifications, and guidelines into structured format. "
+            "Return ONLY the JSON response."
+        )
+    })
+
+    body = {
+        "systemInstruction": {"parts": [{"text": EXTRACTION_SYSTEM_PROMPT}]},
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "maxOutputTokens": 8000,
+            "temperature": 0.2,
+        }
+    }
+
+    url = f"{API_URL}?key={api_key}"
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        response = await client.post(url, headers={"Content-Type": "application/json"}, json=body)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Gemini API error {response.status_code}: {response.text}")
+
+    data = response.json()
+    response_text = _extract_gemini_text(data)
+    result = _clean_gemini_json(response_text)
+
+    if result is None:
+        raise RuntimeError("Failed to parse extraction response from Gemini")
+
+    # Validate categories
+    valid_categories = {"color", "typography", "logo", "imagery", "voice", "layout"}
+    for g in result.get("guidelines", []):
+        if g.get("category") not in valid_categories:
+            g["category"] = "layout"
+
+    return result
+
+
+def _extract_gemini_text(data: dict) -> str:
+    """Extract the text response from a Gemini API response."""
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"Unexpected Gemini API response format: {data}")
+
+
+def _clean_gemini_json(response_text: str) -> dict | None:
+    """Clean and parse JSON from Gemini responses. Returns None on failure."""
+    # Clean up markdown code fences (```json...```)
+    if response_text.startswith("```"):
+        lines = response_text.split("\n")
+        response_text = "\n".join(lines[1:])
+    if response_text.endswith("```"):
+        lines = response_text.split("\n")
+        response_text = "\n".join(lines[:-1])
+    response_text = response_text.strip()
+
+    # Fix escaped single quotes
+    response_text = response_text.replace("\\'", "'")
+
+    # If response appears truncated, try to complete it
+    if not response_text.endswith("}"):
+        open_braces = response_text.count("{") - response_text.count("}")
+        open_brackets = response_text.count("[") - response_text.count("]")
+        if response_text.rstrip().endswith(","):
+            response_text = response_text.rstrip()[:-1]
+        response_text += "]" * open_brackets + "}" * open_braces
+
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        print(f"JSON Parse Error: {e}")
+        print(f"Response text: {repr(response_text[:500])}")
+        return None

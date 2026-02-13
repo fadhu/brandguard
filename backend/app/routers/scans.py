@@ -31,8 +31,14 @@ async def run_scan(scan_id: int, file_path: str, file_type: str):
         conn.execute("UPDATE scans SET status = 'scanning' WHERE id = ?", (scan_id,))
         conn.commit()
 
-        # Fetch all guidelines
-        guidelines = conn.execute("SELECT * FROM guidelines").fetchall()
+        # Fetch guidelines from the active rule set
+        active_rs = conn.execute("SELECT id FROM rule_sets WHERE is_active = 1").fetchone()
+        if active_rs:
+            guidelines = conn.execute(
+                "SELECT * FROM guidelines WHERE rule_set_id = ?", (active_rs["id"],)
+            ).fetchall()
+        else:
+            guidelines = conn.execute("SELECT * FROM guidelines").fetchall()
         guidelines = [dict(g) for g in guidelines]
 
         # Run Claude analysis
